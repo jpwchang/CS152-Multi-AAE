@@ -27,11 +27,12 @@ import argparse
 from load_data import load_data
 
 
-def model_generator(latent_dim, nch=512, dropout=0.5, reg=lambda: l1_l2(l1=1e-7, l2=1e-7)):
+def model_generator(latent_dim, img_size=32, nch=512, dropout=0.5, reg=lambda: l1_l2(l1=1e-7, l2=1e-7)):
     model = Sequential(name="decoder")
     h = 5
-    model.add(Dense(input_dim=latent_dim, output_dim=nch * 4 * 4, W_regularizer=reg()))
-    model.add(Reshape(dim_ordering_shape((nch, 4, 4))))
+    inner_size = img_size // 8
+    model.add(Dense(input_dim=latent_dim, output_dim=nch * inner_size * inner_size, W_regularizer=reg()))
+    model.add(Reshape(dim_ordering_shape((nch, inner_size, inner_size))))
     model.add(SpatialDropout2D(dropout))
     model.add(LeakyReLU(0.2))
     model.add(Convolution2D(nch // 2, h, h, border_mode='same', W_regularizer=reg()))
@@ -95,11 +96,11 @@ l1_l2(1e-7, 1e-7), adv_num=0):
     return Model(z, y, name="discriminator{}".format(adv_num))
 
 
-def example_aae(path, adversarial_optimizer, data_path):
+def example_aae(path, adversarial_optimizer, data_path, img_size):
     # z \in R^100
     latent_dim = 100
     # x \in R^{28x28}
-    input_shape = dim_ordering_shape((3, 32, 32))
+    input_shape = dim_ordering_shape((3, img_size, img_size))
 
     # We will use 5 adversaries
     n_adversaries = 5
@@ -107,7 +108,7 @@ def example_aae(path, adversarial_optimizer, data_path):
     discrim_input_dim = latent_dim / n_adversaries
 
     # generator (z -> x)
-    generator = model_generator(latent_dim)
+    generator = model_generator(latent_dim, img_size=img_size)
     # encoder (x ->z)
     encoder = model_encoder(latent_dim, input_shape)
     # autoencoder (x -> x')
@@ -159,7 +160,7 @@ def example_aae(path, adversarial_optimizer, data_path):
     # callback for image grid of generated samples
     def generator_sampler():
         zsamples = np.random.normal(size=(10 * 10, latent_dim))
-        return dim_ordering_unfix(generator.predict(zsamples)).transpose((0, 2, 3, 1)).reshape((10, 10, 32, 32, 3))
+        return dim_ordering_unfix(generator.predict(zsamples)).transpose((0, 2, 3, 1)).reshape((10, 10, img_size, img_size, 3))
 
     generator_cb = ImageGridCallback(os.path.join(path, "generated-epoch-{:03d}.png"), generator_sampler)
 
@@ -167,8 +168,8 @@ def example_aae(path, adversarial_optimizer, data_path):
     def autoencoder_sampler():
         xsamples = n_choice(xtest, 10)
         xrep = np.repeat(xsamples, 9, axis=0)
-        xgen = dim_ordering_unfix(autoencoder.predict(xrep)).reshape((10, 9, 3, 32, 32))
-        xsamples = dim_ordering_unfix(xsamples).reshape((10, 1, 3, 32, 32))
+        xgen = dim_ordering_unfix(autoencoder.predict(xrep)).reshape((10, 9, 3, img_size, img_size))
+        xsamples = dim_ordering_unfix(xsamples).reshape((10, 1, 3, img_size, img_size))
         samples = np.concatenate((xsamples, xgen), axis=1)
         samples = samples.transpose((0, 1, 3, 4, 2))
         print("Samples: {}".format(samples.shape))
@@ -200,9 +201,11 @@ def example_aae(path, adversarial_optimizer, data_path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data', type=str, action='store')
+    parser.add_argument('-i', '--image_size', type=int, action='store')
     args = parser.parse_args()
     data_path = 'data' if not args.data else args.data
-    example_aae("output/aae-cifar10", AdversarialOptimizerSimultaneous(), data_path)
+    img_size = 32 if not args.image_size else args.image_size
+    example_aae("output/aae-cifar10", AdversarialOptimizerSimultaneous(), data_path, img_size)
 
 
 if __name__ == "__main__":
