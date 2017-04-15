@@ -77,7 +77,8 @@ def model_encoder(latent_dim, input_shape, nch=512, reg=lambda: l1_l2(l1=1e-7, l
     return Model(x, z, name="encoder")
 
 
-def model_discriminator(latent_dim, output_dim=1, hidden_dim=256, reg=lambda: l1_l2(1e-7, 1e-7)):
+def model_discriminator(latent_dim, output_dim=1, hidden_dim=256, reg=lambda:
+l1_l2(1e-7, 1e-7), adv_num=0):
     z = Input((latent_dim,))
     h = z
     mode = 1
@@ -91,7 +92,7 @@ def model_discriminator(latent_dim, output_dim=1, hidden_dim=256, reg=lambda: l1
     h = BatchNormalization()(h)
     h = LeakyReLU(0.2)(h)
     y = Dense(output_dim, name="discriminator_y", activation="sigmoid", W_regularizer=reg())(h)
-    return Model(z, y)
+    return Model(z, y, name="discriminator{}".format(adv_num))
 
 
 def example_aae(path, adversarial_optimizer, data_path):
@@ -100,6 +101,11 @@ def example_aae(path, adversarial_optimizer, data_path):
     # x \in R^{28x28}
     input_shape = dim_ordering_shape((3, 32, 32))
 
+    # We will use 5 adversaries
+    n_adversaries = 5
+
+    discrim_input_dim = latent_dim / n_adversaries
+
     # generator (z -> x)
     generator = model_generator(latent_dim)
     # encoder (x ->z)
@@ -107,35 +113,47 @@ def example_aae(path, adversarial_optimizer, data_path):
     # autoencoder (x -> x')
     autoencoder = Model(encoder.inputs, generator(encoder(encoder.inputs)))
     # discriminator (z -> y)
-    discriminator = model_discriminator(latent_dim)
+    discriminators = [model_discriminator(latent_dim, adv_num=i) for i in range(n_adversaries)]
 
-    # build AAE
+    # assemple AAE
     x = encoder.inputs[0]
     z = encoder(x)
     xpred = generator(z)
     zreal = normal_latent_sampling((latent_dim,))(x)
-    yreal = discriminator(zreal)
-    yfake = discriminator(z)
-    aae = Model(x, fix_names([xpred, yfake, yreal], ["xpred", "yfake", "yreal"]))
+    yreal = [d(zreal) for d in discriminators]
+    yfake = [d(z) for d in discriminators]
+    aae = Model(x, fix_names([xpred] + yfake + yreal, ["xpred"] + \
+                                                     ["yfake{}".format(i) for i in range(n_adversaries)] + \
+                                                     ["yreal{}".format(i) for i in range(n_adversaries)]))
 
     # print summary of models
     generator.summary()
     encoder.summary()
-    discriminator.summary()
+    for discriminator in discriminators:
+        discriminator.summary()
     autoencoder.summary()
 
     # build adversarial model
     generative_params = generator.trainable_weights + encoder.trainable_weights
     model = AdversarialModel(base_model=aae,
-                             player_params=[generative_params, discriminator.trainable_weights],
-                             player_names=["generator", "discriminator"])
-    model.adversarial_compile(adversarial_optimizer=adversarial_optimizer,
-                              player_optimizers=[Adam(1e-4, decay=1e-4), Adam(1e-3, decay=1e-4)],
-                              loss={"yfake": "binary_crossentropy", "yreal": "binary_crossentropy",
-                                    "xpred": "mean_squared_error"},
-                              compile_kwargs={"loss_weights": {"yfake": 1e-2, "yreal": 1e-2, "xpred": 1}})
+                             player_params=[generative_params] + [d.trainable_weights for d in discriminators],
+                             player_names=["generator"] + ["discriminator{}".format(i) for i in range(n_adversaries)])
+    
+    loss_fns = {"xpred" : "mean_squared_error"}
+    loss_fns.update({"yfake{}".format(i)  : "binary_crossentropy" for i in range(n_adversaries)}) 
+    loss_fns.update({"yreal{}".format(i)  : "binary_crossentropy" for i in range(n_adversaries)}) 
+    
+    loss_weights = {"xpred" : 1}
+    loss_weights.update({"yfake{}".format(i)  : 1e-2 for i in range(n_adversaries)}) 
+    loss_weights.update({"yreal{}".format(i)  : 1e-2 for i in range(n_adversaries)}) 
 
-    # load mnist data
+    # generate losses 
+    model.adversarial_compile(adversarial_optimizer=adversarial_optimizer,
+                              player_optimizers=[Adam(1e-4, decay=1e-4)] + [Adam(1e-3, decay=1e-4) for _ in range(n_adversaries)],
+                              loss=loss_fns,
+                              compile_kwargs={"loss_weights": loss_weights})
+
+    # load  data
     xtrain, xtest = load_data(data_path)
 
     # callback for image grid of generated samples
@@ -162,13 +180,13 @@ def example_aae(path, adversarial_optimizer, data_path):
     # train network
     # generator, discriminator; pred, yfake, yreal
     n = xtrain.shape[0]
-    y = [xtrain, np.ones((n, 1)), np.zeros((n, 1)), xtrain, np.zeros((n, 1)), np.ones((n, 1))]
+    y = [xtrain] + [np.ones((n, 1)), np.zeros((n, 1))] * n_adversaries + \
+        ([xtrain] + [np.zeros((n, 1)), np.ones((n, 1))] * n_adversaries) * n_adversaries
     ntest = xtest.shape[0]
-    ytest = [xtest, np.ones((ntest, 1)), np.zeros((ntest, 1)), xtest, np.zeros((ntest, 1)), np.ones((ntest, 1))]
-    history = model.fit(x=xtrain, y=y, validation_data=(xtest, ytest),
-                        callbacks=[generator_cb, autoencoder_cb],
+    ytest = [xtest] + [np.ones((ntest, 1)), np.zeros((ntest, 1))] * n_adversaries + \
+            ([xtest] + [np.zeros((ntest, 1)), np.ones((ntest, 1))] * n_adversaries) * n_adversaries
+    history = model.fit(x=xtrain, y=y, validation_data=(xtest, ytest), callbacks=[generator_cb, autoencoder_cb],
                         nb_epoch=100, batch_size=32)
-
     # save history
     df = pd.DataFrame(history.history)
     df.to_csv(os.path.join(path, "history.csv"))
