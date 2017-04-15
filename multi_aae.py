@@ -206,8 +206,6 @@ def main():
     args = parser.parse_args()
     data_path = 'data' if not args.data else args.data
     output_path = 'output' if not args.outdir else args.outdir
-    args = parser.parse_args()
-    data_path = 'data' if not args.data else args.data
     img_size = 32 if not args.image_size else args.image_size
     example_aae(output_path, AdversarialOptimizerSimultaneous(), data_path,
     img_size)
