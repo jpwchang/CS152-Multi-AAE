@@ -8,7 +8,7 @@ mpl.use('Agg')
 
 from keras.layers import Dense, Reshape, Flatten, SpatialDropout2D
 from keras.layers import Input, merge
-from keras.layers.convolutional import Convolution2D, UpSampling2D, MaxPooling2D
+from keras.layers.convolutional import Convolution2D, UpSampling2D, MaxPooling2D, Conv2DTranspose
 from keras.models import Sequential, Model
 from keras.optimizers import Adam
 from keras.regularizers import l1_l2
@@ -35,19 +35,19 @@ def model_generator(latent_dim, img_size=32, nch=512, dropout=0.5, reg=lambda: l
     model.add(Reshape(dim_ordering_shape((nch, inner_size, inner_size))))
     model.add(SpatialDropout2D(dropout))
     model.add(LeakyReLU(0.2))
-    model.add(Convolution2D(nch // 2, h, h, border_mode='same', W_regularizer=reg()))
+    model.add(Conv2DTranspose(nch // 2, h, h, border_mode='same', W_regularizer=reg()))
     model.add(SpatialDropout2D(dropout))
     model.add(LeakyReLU(0.2))
     model.add(UpSampling2D(size=(2, 2)))
-    model.add(Convolution2D(nch // 2, h, h, border_mode='same', W_regularizer=reg()))
+    model.add(Conv2DTranspose(nch // 2, h, h, border_mode='same', W_regularizer=reg()))
     model.add(SpatialDropout2D(dropout))
     model.add(LeakyReLU(0.2))
     model.add(UpSampling2D(size=(2, 2)))
-    model.add(Convolution2D(nch // 4, h, h, border_mode='same', W_regularizer=reg()))
+    model.add(Conv2DTranspose(nch // 4, h, h, border_mode='same', W_regularizer=reg()))
     model.add(SpatialDropout2D(dropout))
     model.add(LeakyReLU(0.2))
     model.add(UpSampling2D(size=(2, 2)))
-    model.add(Convolution2D(3, h, h, border_mode='same', W_regularizer=reg()))
+    model.add(Conv2DTranspose(3, h, h, border_mode='same', W_regularizer=reg()))
     model.add(Activation('sigmoid'))
     return model
 
