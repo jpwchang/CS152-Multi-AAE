@@ -187,7 +187,7 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
     ytest = [xtest] + [np.ones((ntest, 1)), np.zeros((ntest, 1))] * n_adversaries + \
             ([xtest] + [np.zeros((ntest, 1)), np.ones((ntest, 1))] * n_adversaries) * n_adversaries
     history = model.fit(x=xtrain, y=y, validation_data=(xtest, ytest), callbacks=[generator_cb, autoencoder_cb],
-                        nb_epoch=100, batch_size=32)
+                        epochs=100, batch_size=32)
     # save history
     df = pd.DataFrame(history.history)
     df.to_csv(os.path.join(path, "history.csv"))
@@ -202,10 +202,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-d', '--data', type=str, action='store')
     parser.add_argument('-i', '--image_size', type=int, action='store')
+    parser.add_argument('-o', '--outdir', type=str, action='store')
+    args = parser.parse_args()
+    data_path = 'data' if not args.data else args.data
+    output_path = 'output' if not args.outdir else args.outdir
     args = parser.parse_args()
     data_path = 'data' if not args.data else args.data
     img_size = 32 if not args.image_size else args.image_size
-    example_aae("output/aae-cifar10", AdversarialOptimizerSimultaneous(), data_path, img_size)
+    example_aae(output_path, AdversarialOptimizerSimultaneous(), data_path,
+    img_size)
 
 
 if __name__ == "__main__":
