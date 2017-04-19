@@ -16,6 +16,7 @@ import keras.backend as K
 import pandas as pd
 import numpy as np
 from keras_adversarial.image_grid_callback import ImageGridCallback
+from keras.layers.core import Lambda
 
 from keras_adversarial import AdversarialModel, fix_names, n_choice
 from keras_adversarial import AdversarialOptimizerSimultaneous, normal_latent_sampling
@@ -105,7 +106,7 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
     # We will use 5 adversaries
     n_adversaries = 5
 
-    discrim_input_dim = latent_dim / n_adversaries
+    discrim_input_dim = latent_dim // n_adversaries
 
     # generator (z -> x)
     generator = model_generator(latent_dim, img_size=img_size)
@@ -114,15 +115,15 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
     # autoencoder (x -> x')
     autoencoder = Model(encoder.inputs, generator(encoder(encoder.inputs)))
     # discriminator (z -> y)
-    discriminators = [model_discriminator(latent_dim, adv_num=i) for i in range(n_adversaries)]
+    discriminators = [model_discriminator(discrim_input_dim, adv_num=i) for i in range(n_adversaries)]
 
     # assemple AAE
     x = encoder.inputs[0]
     z = encoder(x)
     xpred = generator(z)
     zreal = normal_latent_sampling((latent_dim,))(x)
-    yreal = [d(zreal) for d in discriminators]
-    yfake = [d(z) for d in discriminators]
+    yreal = [d(Lambda(lambda x: x[:, i*discrim_input_dim:(i+1)*discrim_input_dim])(zreal)) for i, d in enumerate(discriminators)]
+    yfake = [d(Lambda(lambda x: x[:, i*discrim_input_dim:(i+1)*discrim_input_dim])(z)) for i, d in enumerate(discriminators)]
     aae = Model(x, fix_names([xpred] + yfake + yreal, ["xpred"] + \
                                                      ["yfake{}".format(i) for i in range(n_adversaries)] + \
                                                      ["yreal{}".format(i) for i in range(n_adversaries)]))
