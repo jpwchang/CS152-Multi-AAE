@@ -121,8 +121,8 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
     x = encoder.inputs[0]
     z = encoder(x)
     xpred = generator(z)
-    zreal = normal_latent_sampling((latent_dim,))(x)
-    yreal = [d(Lambda(lambda x: x[:, i*discrim_input_dim:(i+1)*discrim_input_dim])(zreal)) for i, d in enumerate(discriminators)]
+    zreal = [normal_latent_sampling((discrim_input_dim,))(x) for _ in range(n_adversaries)]
+    yreal = [d(zreal[i]) for i, d in enumerate(discriminators)]
     yfake = [d(Lambda(lambda x: x[:, i*discrim_input_dim:(i+1)*discrim_input_dim])(z)) for i, d in enumerate(discriminators)]
     aae = Model(x, fix_names([xpred] + yfake + yreal, ["xpred"] + \
                                                      ["yfake{}".format(i) for i in range(n_adversaries)] + \
@@ -160,7 +160,8 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
 
     # callback for image grid of generated samples
     def generator_sampler():
-        zsamples = np.random.normal(size=(10 * 10, latent_dim))
+        zsamples = np.concatenate([np.random.normal(size=(10 * 10, discrim_input_dim))
+                                   for _ in range(n_adversaries)], axis=1)
         return dim_ordering_unfix(generator.predict(zsamples)).transpose((0, 2, 3, 1)).reshape((10, 10, img_size, img_size, 3))
 
     generator_cb = ImageGridCallback(os.path.join(path, "generated-epoch-{:03d}.png"), generator_sampler)
