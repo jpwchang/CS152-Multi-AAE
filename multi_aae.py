@@ -115,15 +115,15 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
     # autoencoder (x -> x')
     autoencoder = Model(encoder.inputs, generator(encoder(encoder.inputs)))
     # discriminator (z -> y)
-    discriminators = [model_discriminator(discrim_input_dim, adv_num=i) for i in range(n_adversaries)]
+    discriminators = [model_discriminator(latent_dim, adv_num=i) for i in range(n_adversaries)]
 
     # assemple AAE
     x = encoder.inputs[0]
     z = encoder(x)
     xpred = generator(z)
     zreal = normal_latent_sampling((latent_dim,))(x)
-    yreal = [d(Lambda(lambda x: x[:, i*discrim_input_dim:(i+1)*discrim_input_dim])(zreal)) for i, d in enumerate(discriminators)]
-    yfake = [d(Lambda(lambda x: x[:, i*discrim_input_dim:(i+1)*discrim_input_dim])(z)) for i, d in enumerate(discriminators)]
+    yreal = [d(zreal) for d in discriminators]
+    yfake = [d(z) for d in discriminators]
     aae = Model(x, fix_names([xpred] + yfake + yreal, ["xpred"] + \
                                                      ["yfake{}".format(i) for i in range(n_adversaries)] + \
                                                      ["yreal{}".format(i) for i in range(n_adversaries)]))
@@ -146,12 +146,12 @@ def example_aae(path, adversarial_optimizer, data_path, img_size):
     loss_fns.update({"yreal{}".format(i)  : "binary_crossentropy" for i in range(n_adversaries)}) 
     
     loss_weights = {"xpred" : 1}
-    loss_weights.update({"yfake{}".format(i)  : 1e-2 for i in range(n_adversaries)}) 
-    loss_weights.update({"yreal{}".format(i)  : 1e-2 for i in range(n_adversaries)}) 
+    loss_weights.update({"yfake{}".format(i)  : 10**(-(i+1)) for i in range(n_adversaries)}) 
+    loss_weights.update({"yreal{}".format(i)  : 10**(-(i+1)) for i in range(n_adversaries)}) 
 
     # generate losses 
     model.adversarial_compile(adversarial_optimizer=adversarial_optimizer,
-                              player_optimizers=[Adam(1e-4, decay=1e-4)] + [Adam(1e-3, decay=1e-4) for _ in range(n_adversaries)],
+                              player_optimizers=[Adam(1e-4, decay=1e-4)] + [Adam(10**(-(n_adversaries-i)), decay=1e-4) for i in range(n_adversaries)],
                               loss=loss_fns,
                               compile_kwargs={"loss_weights": loss_weights})
 
