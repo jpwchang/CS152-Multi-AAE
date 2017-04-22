@@ -98,9 +98,9 @@ l1_l2(1e-7, 1e-7), adv_num=0):
 
 
 def example_aae(path, adversarial_optimizer, data_path, img_size):
-    # z \in R^500
-    latent_dim = 500
-    # x \in R^{img_sizeximg_size}
+    # z \in R^100
+    latent_dim = 100
+    # x \in R^{28x28}
     input_shape = dim_ordering_shape((3, img_size, img_size))
 
     # We will use 5 adversaries
